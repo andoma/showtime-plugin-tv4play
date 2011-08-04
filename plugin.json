@@ -1,0 +1,10 @@
+{
+  "type": "javascript",
+  "id": "tv4play",
+  "file": "tv4play.js",
+  "version": "1.0",
+  "showtimeVersion": "3.1",
+  "title": "TV4 Play",
+  "icon": "tv4play.jpg",
+  "synopsis": "Swedish TV4 online video"
+}
