@@ -8,7 +8,7 @@
 
   plugin.createService("TV4 Play",
 		       "tv4play:categorylist:0:" + startURL + ":Tv4play", "tv",
-		       true, plugin.config.path + "tv4play.jpg");
+		       true, plugin.path + "tv4play.jpg");
 
   var tv4ci = new Namespace("http://www.tv4.se/xml/contentinfo");
   var tv4va = new Namespace("http://www.tv4.se/xml/videoapi");
@@ -200,7 +200,7 @@
   
   //TODO: add search function
   plugin.addSearcher(
-		     "TV4 Play", plugin.config.path + "tv4play.jpg", 
+		     "TV4 Play", plugin.path + "tv4play.jpg", 
 		     function(page, query) {
 			 
 			 pageController(page, function(offset, pageSize) {				 
