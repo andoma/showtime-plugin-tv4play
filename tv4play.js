@@ -1,14 +1,28 @@
 /**
+ * TV4 Play plugin using http://mobapi.tv4play.se API 
+ * TODO: add Senaste, Mest tittade and A-Z
+ * TODO: use pagination for the searcher
+
+ Brief explanation of steps: 
+category listing: http://mobapi.tv4play.se/video/categories/list , which gives a category id, for example 2.77843
+followed by:  http://mobapi.tv4play.se/video/program_formats/list.json?sorttype=name&premium_filter=free&categoryid=2.77843 , which gives a new id, for example 1.1912577
+followed by: http://mobapi.tv4play.se/video/programs/search.json?platform=web&video_types=programs&premium=false&sorttype=date&livepublished=false&categoryids=1.1912577&startdate=197001010100
+this will give vmanprogid which is the program id to send to tv4play:clip:([0-9]*) function
  */
 
 (function(plugin) {
-
-  var maxBandwidth = 10000; //probably more than tv4 will ever provide with. 1500, 800 and 300 have been spotted.
-  var startURL = "http://wwwb.tv4play.se/?view=xml";
-
-  plugin.createService("TV4 Play",
-		       "tv4play:categorylist:0:" + startURL + ":Tv4play", "tv",
+  var service = plugin.createService("TV4 Play",
+		       "tv4play:categorylist", "tv",
 		       true, plugin.path + "tv4play.jpg");
+
+  var settings = plugin.createSettings("TV4 Play", plugin.path + "tv4play.jpg", "TV4 Play");
+
+  
+  settings.createInt("bandwidth", "Max video bitrate: ", 3000, 350, 3000, 150, "kbps", function(v) { //2500, 1500, 800 and 300 have been spotted.
+	  service.bandwidth = v;
+	  });
+
+  //TODO: make video icon size a setting
 
   var tv4ci = new Namespace("http://www.tv4.se/xml/contentinfo");
   var tv4va = new Namespace("http://www.tv4.se/xml/videoapi");
@@ -50,6 +64,7 @@
 	  }
       
       var videoUri = bestClip.@src;
+      showtime.trace("Using clip with bitrate " + bestClip.attribute('system-bitrate') + " bps");
       
       var slashIndex = videoUri.indexOf("/"); //example uri: mp4:/.....
       var videoUri = videoUri.substr(slashIndex);
@@ -57,133 +72,113 @@
       return(baseURL + "" + videoUri);      
   }
 
-  plugin.addURI("tv4play:categorylist:([0-9]):(.*):(.*)", function(page, level, url, categoryName) {
-	  page.metadata.title = categoryName; 
-
-	  level = parseInt(level);
+  plugin.addURI("tv4play:programformatslist:(.*)", function(page, categoryId) {
 	  
-	  var doc = new XML(showtime.httpGet(url).toString());
-
-	  var nodes = doc.tv4va::category;
-
-	  var currentLevel = 0;
-	  while(currentLevel < level) {
-	      nodes = nodes.tv4va::subcategories.tv4va::category;
-	      currentLevel = parseInt(nodes[0].@level); //only look at first node to decide level
-	  }
-	  
-	  /*
-	      showtime.message(e, true, false);
-	      page.loading = false;
-	      page.type = "openerror";
-	      page.error = e;
-	  */
-
-	  for each (var categoryNode in nodes) {
-		  if(categoryNode.@name != categoryName) 
-		      continue;
-
-		  for each (var viewNode in categoryNode.tv4va::views.tv4va::view) {
-			  var newURL = viewNode.tv4va::url;
-			  if(newURL == undefined) //for example can there be empty views, such as http://wwwb.tv4play.se/1.1045414?view=xml
-			      continue;
-			  /* //the categorylist is only a repetition of what we've already got - no need to show
-			  if(viewNode.@kind == "categorylist") {
-			      var uri = "tv4play:categorylist:" + (newURL == url ? level+1 : 0);
-			      page.appendItem(uri + ":" + newURL + ":" + viewNode.@title , "directory", {title: viewNode.@title});
-			  } else
-			  */
-			  if(viewNode.@kind == "cliplist") {
-			      page.appendItem("tv4play:cliplist:" + newURL, "directory", {title: viewNode.@title});
-			  }
-		      }		  
-		  
-		  for each (var subcategoryNode in categoryNode.tv4va::subcategories.tv4va::category) {
-			  if(subcategoryNode.tv4va::views.tv4va::view.length() == 1) //the categorylist will always contain a link to another categorylist per show. if there are no cliplist nodes, there will be no clips in the category
-			      continue;
-			  page.appendItem("tv4play:categorylist:" + (level+1) + ":" + url + ":" + subcategoryNode.@name, "directory", {title: subcategoryNode.@name});
-		      }
-		
-
-	      }
-
+	  populateProgramFormats(page, {categoryid: categoryId});
 	  page.type = "directory";
+	  page.contents = "items";
 	  page.loading = false;
+
       });
 
-  plugin.addURI("tv4play:cliplist:(.*)", function(page, clipListURL) {
-	  page.type = "directory";
-
-	  var doc = new XML(showtime.httpGet(clipListURL).toString());
-
-	  /*
-	  var numberOfHits = doc.@totalNumberOfHits; //TODO: use this to implement pagination
-	  var pageNumber = doc.@page; //This is a string like "Page 1 of 5". setting get parameter page=X gives page.
-	  var pageSize = doc.@pagesize; //TODO: same as above. setting get parameter pagesize=y sets pagesize. seems not to work when searching.
-	  */
-
-	  for each (var contentNode in doc.tv4ci::contentList.tv4ci::content) {
-		  clipPopulator(page, contentNode);
-	      }
-
-	  page.loading = false;
-      });
-
-
-  function pageController(page, loader, populator) {
-      var offset = 1;
-
-      function paginator() {
-	  var pageSize = 20; //may be updated by the return value from the request
-	  var num = 0;
-	  
-	  while(1) {
-	      var doc = new XML(loader(offset, pageSize).toString());
-	      var numberOfHits = parseInt(doc.tv4ci::contentList.attribute('totalNumberOfHits'));
-	      page.entries = (isNaN(numberOfHits) ? 0 : numberOfHits);
-
-	      var returnedPageSize = parseInt(doc.tv4ci::contentList.attribute('pagesize'));
-	      if(!isNaN(returnedPageSize))
-		  pageSize = returnedPageSize;
-
-	      var c = 0;
-	      
-	      for each (var item in doc.tv4ci::contentList.tv4ci::content) {
-		      c++;
-		      populator(page, item);
-		}
-	      page.loading = false;
-	      num += c;
-	      if(c == 0 || num > pageSize)
-		  break;
-	  }
-	  offset += num;
-	  return offset < page.entries;
-      }
-
-      page.type = "directory";
-      paginator();
-      page.paginator = paginator;
+  function mergeProperties(obj1, obj2) {
+      var obj3 = {};
+      for (var attrname in obj1) { obj3[attrname] = obj1[attrname]; }
+      for (var attrname in obj2) { obj3[attrname] = obj2[attrname]; }
+      return obj3;
   }
 
+  function populateProgramFormats(page, args) {
+      var url = "http://mobapi.tv4play.se/video/program_formats/list.json";
+      args = mergeProperties(args, {sorttype: "name", premium_filter: "free"});
+      showtime.trace("calling " + url);
+      var programList = showtime.JSONDecode(showtime.httpGet(url, args));
+      for each (var program in programList) {
+	      if(program.premium) {
+		  showtime.trace("Skipping premium program: " + program.name);
+		  continue;
+	      }
+	      
+	      var uri = "tv4play:searchbyid:" + program.id;
+	      page.appendItem(uri, "directory", {title:program.name,
+			  description: program.text,
+			  icon: program.image}); //consider using image_highres
+	  }      
+      return programList.length; 
+  }
+
+
+  function populateSearch(page, args) {
+      var url = "http://mobapi.tv4play.se/video/programs/search.json"; //returns both full programs and clips.
+      showtime.trace("calling " + url);
+
+      args = mergeProperties(args, {platform: "web", premium: "false", sorttype: "date", startdate: "197001010100", rows: 100}); //TODO: ditch the hardcoded rows arg and implement pagination
+      
+      var clipList = showtime.JSONDecode(showtime.httpGet(url, args));
+      
+      for each (var clip in clipList.results) {
+	      showtime.trace(clip.name);
+	      var uri = "tv4play:clip:" + clip.vmanprogid;
+	      page.appendItem(uri, "video", {title:clip.name,
+			  description: clip.lead,
+			  icon: clip.largeimage}); //either thumbnail, largeimage or originalimage. It is also possible to specify an arbitrary size. TODO: make this a setting
+	  } 
+      return clipList.results.length;
+  }
+
+  plugin.addURI("tv4play:searchbyid:(.*)", function(page, categoryId) {	  
+	  populateSearch(page, {categoryids: categoryId});
+
+	  //	  page.contents = "items"; //could be fun, but the description can't be shown then
+	  page.type = "directory";
+	  page.loading = false;
+      });
+
+
+
+  plugin.addURI("tv4play:categorylist", function(page) {
+	  //uses headers just like the iphone, otherwise tv4play.se sometimes responds with a 406
+	  var headers = {'User-Agent' : "Mozilla/5.0 (iPhone; U; CPU iPhone OS 3_0 like Mac OS X; en-us) AppleWebKit/420.1 (KHTML, like Gecko) Version/3.0 Mobile/1A542a Safari/419.3",
+			 'Accept' : "*/*", 
+			 'Accept-Encoding': "",
+			 'Accept-Language': "sv-se",
+			 'Connection': "keep-alive"};
+	  var listUrl = "http://mobapi.tv4play.se/video/categories/list.json";
+
+	  var httpResponse = showtime.httpGet(listUrl, {}, headers);
+
+	  var categoryList = showtime.JSONDecode(httpResponse.toString());
+	  
+	  for each (var category in categoryList) {
+		  if(category.startpage) //don't display the startpage, "tv4playnew.se"
+		      continue;
+		  var uri = "tv4play:programformatslist:" + category.id;
+		  page.appendItem(uri, "directory", {title:category.name});
+	      }
+
+	  page.type = "directory";
+	  page.loading = false;
+
+      });
+
+
+
+  
   function clipPopulator(page, item) {
       		  var metadata = { title: item.tv4ci::title,
 				   description: item.tv4ci::text,
 				   icon: item.tv4ci::w219imageUrl};
 		  page.appendItem("tv4play:clip:" + item.tv4ci::vmanProgramId, "video", metadata);
   }
+  
 
   /**
    * show clip 
    */
   plugin.addURI("tv4play:clip:([0-9]*)", function(page, clipId) {
-	  var smilUrl="http://anytime.tv4.se/webtv/metafileFlash.smil?p=" + clipId + "&bw=" + maxBandwidth + "&emulate=true&sl=true";
+	  var smilUrl="http://anytime.tv4.se/webtv/metafileFlash.smil?p=" + clipId + "&bw=" + service.bandwidth + "&emulate=true&sl=true";
+	  showtime.trace("Calling " + smilUrl);
 	  var content = showtime.httpGet(smilUrl).toString();
-	  /*	  
-	  var content = '<?xml version="1.0" encoding="iso-8859-1"?>' + "\n" + content;
-	  showtime.print(smilUrl);
-	  showtime.print(content);
-	  */
 	  var doc = new XML(content);
 	  
 	  var videoURL = getVerifiableVideoUrl(getVideoURL(doc));      
@@ -197,20 +192,31 @@
 
 
 
-  
-  //TODO: add search function
+  /**
+   * TODO: use pagination
+   */
   plugin.addSearcher(
 		     "TV4 Play", plugin.path + "tv4play.jpg", 
 		     function(page, query) {
+			 showtime.trace("TV4 play searcher called with query: '" + query + "'");
 			 
-			 pageController(page, function(offset, pageSize) {				 
-				 var pageNum = Math.floor(offset/pageSize); 
-				 return showtime.httpGet("http://wwwb.tv4play.se/1.1379876/sok_pa_tv4_play?view=xml&sortorder=publishedDate&popup=true&type=VIDEOA", {
-					 page: pageNum,
-					     q: query,
-					     pagesize: pageSize
-					     }).toString();
-			     }, clipPopulator);
+			 //in the iphone app, 3 search calls are made
+
+			 //first: program names - this is esentially the same as programformatslist. consider refactoring to use the same code
+			 var count = populateProgramFormats(page, {name: query});
+
+			 //second: full programs
+			 count += populateSearch(page,{video_types: "programs", text: query});			 
+
+			 //third: clips
+			 count += populateSearch(page,{video_types: "clips", text: query});
+
+
+			 showtime.trace("TV4 play number of hits: " + count);
+			 page.entries = count;
+			 page.type = "directory";
+			 page.contents = "items";
+			 page.loading = false;
 		     });
   
 })(this);
