@@ -1,9 +1,9 @@
 {"title": "TV4 Play", 
 "synopsis": "Swedish TV4 online video. Premium is currently not supported.", 
-"version": "1.1", 
+"version": "1.2", 
 "file": "tv4play.js", 
 "showtimeVersion": "3.1.193", 
 "type": "javascript", 
 "id": "tv4play", 
-"icon": "tv4play.jpg",
+"icon": "tv4play.png",
 "author": "Erik Ahlner"}

@@ -13,19 +13,15 @@ this will give vmanprogid which is the program id to send to tv4play:clip:([0-9]
 (function(plugin) {
   var service = plugin.createService("TV4 Play",
 		       "tv4play:categorylist", "tv",
-		       true, plugin.path + "tv4play.jpg");
+		       true, plugin.path + "tv4play.png");
 
-  var settings = plugin.createSettings("TV4 Play", plugin.path + "tv4play.jpg", "TV4 Play");
+  var settings = plugin.createSettings("TV4 Play", plugin.path + "tv4play.png", "TV4 Play");
 
-  
   settings.createInt("bandwidth", "Max video bitrate: ", 3000, 350, 3000, 150, "kbps", function(v) { //2500, 1500, 800 and 300 have been spotted.
 	  service.bandwidth = v;
 	  });
 
   //TODO: make video icon size a setting
-
-  var tv4ci = new Namespace("http://www.tv4.se/xml/contentinfo");
-  var tv4va = new Namespace("http://www.tv4.se/xml/videoapi");
 
   function getVerifiableVideoUrl(url) {
       var swfUrl="http://wwwb.tv4play.se/polopoly_fs/1.939636.1281635185\!approot/tv4video.swf?"; //TODO: find out how to get the actual url, in case it changes
@@ -94,11 +90,6 @@ this will give vmanprogid which is the program id to send to tv4play:clip:([0-9]
       showtime.trace("calling " + url);
       var programList = showtime.JSONDecode(showtime.httpGet(url, args));
       for each (var program in programList) {
-	      if(program.premium) {
-		  showtime.trace("Skipping premium program: " + program.name);
-		  continue;
-	      }
-	      
 	      var uri = "tv4play:searchbyid:" + program.id;
 	      page.appendItem(uri, "directory", {title:program.name,
 			  description: program.text,
@@ -110,14 +101,11 @@ this will give vmanprogid which is the program id to send to tv4play:clip:([0-9]
 
   function populateSearch(page, args) {
       var url = "http://mobapi.tv4play.se/video/programs/search.json"; //returns both full programs and clips.
-      showtime.trace("calling " + url);
-
       args = mergeProperties(args, {platform: "web", premium: "false", sorttype: "date", startdate: "197001010100", rows: 100}); //TODO: ditch the hardcoded rows arg and implement pagination
       
       var clipList = showtime.JSONDecode(showtime.httpGet(url, args));
       
       for each (var clip in clipList.results) {
-	      showtime.trace(clip.name);
 	      var uri = "tv4play:clip:" + clip.vmanprogid;
 	      page.appendItem(uri, "video", {title:clip.name,
 			  description: clip.lead,
@@ -160,16 +148,6 @@ this will give vmanprogid which is the program id to send to tv4play:clip:([0-9]
 	  page.loading = false;
 
       });
-
-
-
-  
-  function clipPopulator(page, item) {
-      		  var metadata = { title: item.tv4ci::title,
-				   description: item.tv4ci::text,
-				   icon: item.tv4ci::w219imageUrl};
-		  page.appendItem("tv4play:clip:" + item.tv4ci::vmanProgramId, "video", metadata);
-  }
   
 
   /**
@@ -196,7 +174,7 @@ this will give vmanprogid which is the program id to send to tv4play:clip:([0-9]
    * TODO: use pagination
    */
   plugin.addSearcher(
-		     "TV4 Play", plugin.path + "tv4play.jpg", 
+		     "TV4 Play", plugin.path + "tv4play.png", 
 		     function(page, query) {
 			 showtime.trace("TV4 play searcher called with query: '" + query + "'");
 			 
