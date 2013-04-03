@@ -112,7 +112,7 @@ this will give vmanprogid which is the program id to send to tv4play:asset:([0-9
     }
 
     if(hls == null) {
-      showtime.trace("No video info found in: " + url;
+      showtime.trace("No video info found in: " + url);
       page.error("No video information found");
       return;
     }
